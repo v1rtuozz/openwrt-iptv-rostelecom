@@ -1,0 +1,20 @@
+config igmpproxy
+        option quickleave 1
+
+config phyint
+        option network 'iptv'
+        option zone 'iptv'
+        option direction 'upstream'
+        list altnet '198.18.20.5'
+	list altnet '10.179.47.27'
+	list altnet '10.171.151.11'
+
+config phyint
+        option network 'iptv_lan'
+        option zone 'lan'
+        option direction 'downstream'
+
+# loopback disabled (не трогаем)
+config phyint
+        option network 'loopback'
+        option direction 'disabled'
