@@ -1,0 +1,67 @@
+config interface 'loopback'
+        option device 'lo'
+        option proto 'static'
+        option ipaddr '127.0.0.1'
+        option netmask '255.0.0.0'
+
+config globals 'globals'
+        option ula_prefix 'fd54:519a:125c::/48'
+        option packet_steering '1'
+
+config device
+        option name 'br-lan'
+        option type 'bridge'
+        list ports 'lan2'
+        list ports 'lan3'
+        option igmp_snooping '1'
+
+config interface 'lan'
+        option device 'br-lan'
+        option proto 'static'
+        option ipaddr '192.168.1.1'
+        option netmask '255.255.255.0'
+        option ip6assign '60'
+
+config device
+        option name 'br-iptv'
+        option type 'bridge'
+        list ports 'lan4'
+        option igmp_snooping '1'
+        option igmpversion '2'
+
+config interface 'iptv_lan'
+        option device 'br-iptv'
+        option proto 'static'
+        option ipaddr '192.168.100.1'
+        option netmask '255.255.255.0'
+        option delegate '0'
+
+config device
+        option name 'wan'
+        option macaddr 'cc:d8:43:18:1a:7d'
+        option multicast '1'
+        option igmpversion '2'
+        option sendredirects '1'
+
+config interface 'wan'
+        option device 'wan'
+        option proto 'pppoe'
+        option username 'ваш юзернейм'
+        option password 'ваш пароль'
+        option ipv6 'auto'
+        option mtu '1492'
+        option keepalive '5 10'
+        option delegate '0'
+
+config interface 'wan6'
+        option device 'wan'
+        option proto 'dhcpv6'
+        option reqaddress 'try'
+        option reqprefix 'auto'
+
+config interface 'iptv'
+        option device 'wan'
+        option proto 'static'
+        list ipaddr '10.0.0.1/24'
+        option defaultroute '0'
+        option delegate '0'
