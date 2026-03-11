@@ -38,7 +38,7 @@ wget -O /tmp/iptv-manager.sh https://raw.githubusercontent.com/v1rtuozz/openwrt-
 > <br> Неправильно настроенный IGMPProxy
 > > Перейдите в панель (Status -> URL Log) <br>
 > > При запуске канала на приставке, выловите IP. <br>
-> > Пример: ---><b> 212.12.12.236 </b> <--- ,443,2,NONE,SSL,64,0,cnt-tula-itv03.svc.iptv.rt.ru 
+> > Пример: 2026-03-10 18:18:53,E4:27:71:26:90:16,192.168.100.144,52120,```212.12.12.236```,443,2,NONE,SSL,64,0,cnt-tula-itv03.svc.iptv.rt.ru
 > > > Далее необходимо редактировать конфиг файл. <br>
 > > > Заходим через SSH: ``` nano /etc/config/igmpproxy ``` <br>
 > > > В конце параметра: <b> config phyint </b> указываем:
