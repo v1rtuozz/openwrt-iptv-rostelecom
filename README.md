@@ -52,4 +52,4 @@ wget -O /tmp/iptv-manager.sh https://raw.githubusercontent.com/v1rtuozz/openwrt-
 > > [10.03.2026] Выпущена версия v2. На версии v1 наблюдается фикс со стороны провайдера. </b> <br> 
 > > [06.02.2025] Внесли пару изменений со стороны провайдера, возможно понадобится перенастройка конфига. Наблюдаю.
 
-<p align="center">Тестировалось на Mi Router AX3000T / OpenWrt 24.10.4 <br> Поддержать автора:</p>
+<p align="center">Тестировалось на Mi Router AX3000T / OpenWrt 24.10.4 <br> Cudy ac1200 v4 Поддержать автора:</p>
