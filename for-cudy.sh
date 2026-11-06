@@ -1,6 +1,10 @@
 #!/bin/sh
-# Инсталлятор v2.1 для Cudy WR3000S (IGMP proxy + VLAN 40 IPTV)
-# Запуск: sh install-v2.1-cudy.sh
+# Installator v2.1 for Cudy WR3000S (IGMP proxy + VLAN 40 IPTV)
+# Run: sh install-v2.1-cudy.sh
+#
+# Menu:
+#   1 - Install configuration 
+#   2 - Recovery backup (if .bak exists)
 
 set -e
 
@@ -9,6 +13,8 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
+CONFIG_FILES="network dhcp firewall igmpproxy"
+
 error_exit() {
     printf "${RED}Ошибка: %s${NC}\n" "$1" >&2
     exit 1
@@ -16,7 +22,7 @@ error_exit() {
 
 [ "$(id -u)" -eq 0 ] || error_exit "Скрипт должен быть запущен от root."
 
-# Проверка модели
+# ---------- Check model ----------
 if command -v ubus >/dev/null 2>&1; then
     MODEL=$(ubus call system board 2>/dev/null | sed -n 's/.*"model": *"\([^"]*\)".*/\1/p' | head -1)
     case "$MODEL" in
@@ -30,28 +36,72 @@ if command -v ubus >/dev/null 2>&1; then
     esac
 fi
 
-printf "${YELLOW}=== Инсталлятор v2.1 для Cudy WR3000S ===${NC}\n"
-printf "Будут установлены: network, dhcp, firewall, igmpproxy\n"
-printf "Текущие файлы будут сохранены как *.bak\n\n"
-printf "Продолжить? (y/N): "
-read CONFIRM
-case "$CONFIRM" in y|Y) ;; *) exit 0 ;; esac
+# ---------- Check have backup ----------
+BACKUP_EXISTS=0
+for f in $CONFIG_FILES; do
+    if [ -f "/etc/config/$f.bak" ]; then
+        BACKUP_EXISTS=1
+        break
+    fi
+done
 
-# --- Порты LAN ---
-printf "\n${YELLOW}Настройка LAN портов:${NC}\n"
-printf "Сколько всего LAN портов (не считая WAN)? [4]: "
-read TOTAL_PORTS
-[ -z "$TOTAL_PORTS" ] && TOTAL_PORTS=4
-echo "$TOTAL_PORTS" | grep -qE '^[0-9]+$' || error_exit "Некорректное количество портов"
-[ "$TOTAL_PORTS" -ge 1 ] || error_exit "Должен быть хотя бы 1 LAN порт"
+# ---------- Main menu ----------
+printf "${YELLOW}=== Инсталлятор v2.1 для Cudy WR3000S ===${NC}\n\n"
+printf "Выберите действие:\n"
+printf "  1 - Установка конфигурации\n"
+if [ "$BACKUP_EXISTS" -eq 1 ]; then
+    printf "  2 - Восстановить бэкап\n"
+else
+    printf "  2 - Восстановить бэкап ${RED}(недоступно: бэкап не найден)${NC}\n"
+fi
+printf "Введите номер [1]: "
+read ACTION
+ACTION=${ACTION:-1}
 
-printf "В какой порт LAN подключен IPTV (1-%s)? [4]: " "$TOTAL_PORTS"
-read IPTV_PORT
-[ -z "$IPTV_PORT" ] && IPTV_PORT=4
-echo "$IPTV_PORT" | grep -qE '^[0-9]+$' || error_exit "Некорректный номер порта"
-[ "$IPTV_PORT" -ge 1 ] && [ "$IPTV_PORT" -le "$TOTAL_PORTS" ] || error_exit "Порт вне диапазона"
+case "$ACTION" in
+    1) ;;
+    2)
+        if [ "$BACKUP_EXISTS" -eq 0 ]; then
+            error_exit "Бэкап не найден — восстановление невозможно"
+        fi
+        ;;
+    *) error_exit "Неверный выбор" ;;
+esac
 
-# --- PPPoE ---
+# ==================== Recovery ====================
+if [ "$ACTION" = "2" ]; then
+    printf "\n${YELLOW}Восстановление из резервных копий...${NC}\n"
+    restored=0
+    for f in $CONFIG_FILES; do
+        if [ -f "/etc/config/$f.bak" ]; then
+            cp "/etc/config/$f.bak" "/etc/config/$f"
+            printf "  ${GREEN}восстановлен${NC}: /etc/config/$f\n"
+            restored=$((restored + 1))
+        fi
+    done
+    if [ "$restored" -eq 0 ]; then
+        error_exit "Не найдено ни одного файла бэкапа"
+    fi
+
+    printf "\n${YELLOW}Перезапустить службы сейчас? (y/N): "
+    read RESTART
+    case "$RESTART" in
+        y|Y)
+            for svc in network dnsmasq firewall igmpproxy; do
+                printf "  %s... " "$svc"
+                if /etc/init.d/$svc restart >/dev/null 2>&1; then
+                    printf "${GREEN}OK${NC}\n"
+                else
+                    printf "${YELLOW}пропущено${NC}\n"
+                fi
+            done
+            ;;
+    esac
+    printf "\n${GREEN}=== Восстановление завершено. ===${NC}\n"
+    exit 0
+fi
+
+# ==================== Install ====================
 printf "\n${YELLOW}Учётные данные PPPoE:${NC}\n"
 printf "Имя пользователя: "
 read USERNAME
@@ -61,12 +111,30 @@ printf "\n"
 printf "Подтвердите пароль: "
 read -s PASSWORD_CONFIRM
 printf "\n"
-[ "$PASSWORD" = "$PASSWORD_CONFIRM" ] || error_exit "Пароли не совпадают"
 
-case "$USERNAME" in *\'*) error_exit "Имя пользователя не должно содержать одинарные кавычки" ;; esac
-case "$PASSWORD" in *\'*) error_exit "Пароль не должен содержать одинарные кавычки" ;; esac
+if [ "$PASSWORD" != "$PASSWORD_CONFIRM" ]; then
+    error_exit "Пароли не совпадают"
+fi
+case "$USERNAME" in *\'*) error_exit "Недопустимый символ ' в имени пользователя" ;; esac
+case "$PASSWORD" in *\'*) error_exit "Недопустимый символ ' в пароле" ;; esac
 
-# --- Порт-листы ---
+# ---------- Ports ----------
+printf "\n${YELLOW}Настройка портов LAN:${NC}\n"
+printf "Сколько всего LAN портов (не считая WAN)? [4]: "
+read TOTAL_PORTS
+TOTAL_PORTS=${TOTAL_PORTS:-4}
+echo "$TOTAL_PORTS" | grep -qE '^[0-9]+$' || error_exit "Некорректное количество портов"
+[ "$TOTAL_PORTS" -ge 1 ] || error_exit "Должен быть хотя бы 1 LAN порт"
+
+printf "В какой порт LAN подключен IPTV (1-%s)? [4]: " "$TOTAL_PORTS"
+read IPTV_PORT
+IPTV_PORT=${IPTV_PORT:-4}
+echo "$IPTV_PORT" | grep -qE '^[0-9]+$' || error_exit "Некорректный номер порта"
+if [ "$IPTV_PORT" -lt 1 ] || [ "$IPTV_PORT" -gt "$TOTAL_PORTS" ]; then
+    error_exit "Порт вне диапазона 1..$TOTAL_PORTS"
+fi
+
+# ---------- Port list ----------
 LAN_PORTS=""
 i=1
 while [ "$i" -le "$TOTAL_PORTS" ]; do
@@ -74,16 +142,16 @@ while [ "$i" -le "$TOTAL_PORTS" ]; do
         LAN_PORTS="${LAN_PORTS}    list ports 'lan$i'
 "
     fi
-    i=$((i+1))
+    i=$((i + 1))
 done
 IPTV_LINE="    list ports 'lan$IPTV_PORT'"
 
+# ---------- Generation config to temp dir ----------
 TMPD=$(mktemp -d) || error_exit "Не удалось создать временную директорию"
 trap 'rm -rf "$TMPD"' EXIT
 
-# ==================== NETWORK ====================
+# ----- Network -----
 : > "$TMPD/network"
-
 cat >> "$TMPD/network" <<'EOF'
 config interface 'loopback'
     option device 'lo'
@@ -98,9 +166,7 @@ config device
     option name 'br-lan'
     option type 'bridge'
 EOF
-
 printf "%s" "$LAN_PORTS" >> "$TMPD/network"
-
 cat >> "$TMPD/network" <<'EOF'
     option igmp_snooping '1'
 
@@ -120,10 +186,8 @@ config interface 'wan'
     option device 'wan.20'
     option proto 'pppoe'
 EOF
-
 printf "    option username '%s'\n" "$USERNAME" >> "$TMPD/network"
 printf "    option password '%s'\n" "$PASSWORD" >> "$TMPD/network"
-
 cat >> "$TMPD/network" <<'EOF'
     option ipv6 'auto'
     option mtu '1492'
@@ -148,9 +212,7 @@ config device
     option name 'br-iptv'
     option type 'bridge'
 EOF
-
 printf "%s\n" "$IPTV_LINE" >> "$TMPD/network"
-
 cat >> "$TMPD/network" <<'EOF'
     option igmp_snooping '0'
 
@@ -161,7 +223,7 @@ config interface 'iptv_lan'
     option delegate '0'
 EOF
 
-# ==================== DHCP ====================
+# ----- DHCP -----
 cat > "$TMPD/dhcp" <<'EOF'
 config dnsmasq
     option domainneeded '1'
@@ -216,7 +278,7 @@ config dhcp 'iptv_lan'
     option dhcpv4 'server'
 EOF
 
-# ==================== FIREWALL ====================
+# ----- Firewall -----
 cat > "$TMPD/firewall" <<'EOF'
 config defaults
     option input 'REJECT'
@@ -254,12 +316,10 @@ config zone
     option forward 'REJECT'
     list network 'iptv_lan'
 
-# Multicast из IPTV в iptv_lan
 config forwarding
     option src 'iptv'
     option dest 'iptv_lan'
 
-# Интернет для STB (портал/EPG)
 config forwarding
     option src 'iptv_lan'
     option dest 'wan'
@@ -314,7 +374,7 @@ config rule
     option target 'ACCEPT'
 EOF
 
-# ==================== IGMPPROXY ====================
+# ----- igmpproxy -----
 cat > "$TMPD/igmpproxy" <<'EOF'
 config igmpproxy
     option quickleave 1
@@ -341,31 +401,41 @@ config phyint
     option direction 'downstream'
 EOF
 
-# ==================== INSTALL ====================
-install_file() {
-    src="$1"
-    dst="$2"
-    if [ -f "$dst" ]; then
-        cp "$dst" "$dst.bak" && printf "  backup: %s.bak\n" "$dst"
+# ==================== BACKUP (pre-install) ====================
+printf "\n${GREEN}Создание резервных копий (только если их ещё нет)...${NC}\n"
+for f in $CONFIG_FILES; do
+    if [ -f "/etc/config/$f" ]; then
+        if [ ! -f "/etc/config/$f.bak" ]; then
+            cp "/etc/config/$f" "/etc/config/$f.bak"
+            printf "  ${GREEN}создан${NC}: /etc/config/$f.bak\n"
+        else
+            printf "  ${YELLOW}уже существует${NC}: /etc/config/$f.bak (оригинал сохранён)\n"
+        fi
+    else
+        printf "  ${YELLOW}пропущен${NC}: /etc/config/$f (файл отсутствует)\n"
     fi
-    cp "$src" "$dst" && printf "  установлен: %s\n" "$dst"
-}
+done
 
+# ==================== INSTALL ====================
 printf "\n${GREEN}Установка файлов в /etc/config...${NC}\n"
-for f in network dhcp firewall igmpproxy; do
-    install_file "$TMPD/$f" "/etc/config/$f"
+for f in $CONFIG_FILES; do
+    cp "$TMPD/$f" "/etc/config/$f"
+    printf "  установлен: /etc/config/$f\n"
 done
 
 # ==================== CHECK ====================
 printf "\n${YELLOW}Проверка синтаксиса конфигов...${NC}\n"
 if command -v uci >/dev/null 2>&1; then
-    uci show network >/dev/null 2>&1 && printf "  network: ${GREEN}OK${NC}\n" || printf "  network: ${RED}ошибка${NC}\n"
-    uci show firewall >/dev/null 2>&1 && printf "  firewall: ${GREEN}OK${NC}\n" || printf "  firewall: ${RED}ошибка${NC}\n"
-    uci show dhcp >/dev/null 2>&1 && printf "  dhcp: ${GREEN}OK${NC}\n" || printf "  dhcp: ${RED}ошибка${NC}\n"
-    uci show igmpproxy >/dev/null 2>&1 && printf "  igmpproxy: ${GREEN}OK${NC}\n" || printf "  igmpproxy: ${RED}ошибка${NC}\n"
+    for f in $CONFIG_FILES; do
+        if uci -q show "$f" >/dev/null 2>&1; then
+            printf "  %s: ${GREEN}OK${NC}\n" "$f"
+        else
+            printf "  %s: ${YELLOW}предупреждение (uci не смог прочитать)${NC}\n" "$f"
+        fi
+    done
 fi
 
-# ==================== RELOAD ====================
+# ==================== ПЕРЕЗАПУСК ====================
 printf "\n${YELLOW}Перезапустить службы сейчас? (y/N): "
 read RESTART
 case "$RESTART" in
@@ -379,13 +449,10 @@ case "$RESTART" in
             fi
         done
         ;;
-    *) printf "${YELLOW}Перезапусти вручную: /etc/init.d/network restart && /etc/init.d/igmpproxy restart${NC}\n" ;;
+    *)
+        printf "${YELLOW}Перезапусти вручную: /etc/init.d/network restart && /etc/init.d/igmpproxy restart${NC}\n"
+        ;;
 esac
 
-printf "\n${GREEN}=== Готово. Установка v2.1 для Cudy WR3000S завершена. ===${NC}\n"
-printf "\nПроверка после перезагрузки:\n"
-printf "  pgrep igmpproxy                        # процесс жив\n"
-printf "  logread | grep igmpproxy               # логи прокси\n"
-printf "  ip -4 addr show                        # IP на wan.20, iptv_lan, lan\n"
-printf "  ip maddr show dev br-iptv              # группы на downstream\n"
-printf "  iptables -L FORWARD -v -n               # счётчики мультикаста\n"
+printf "\n${GREEN}=== Установка v2.1 завершена. ===${NC}\n"
+printf "Для отката запусти скрипт снова и выбери пункт 2.\n"
