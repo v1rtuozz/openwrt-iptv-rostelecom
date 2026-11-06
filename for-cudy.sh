@@ -1,7 +1,7 @@
 #!/bin/sh
 # Installator v2.1 for Cudy WR3000S (IGMP proxy + VLAN 40 IPTV)
 # Run: sh install-v2.1-cudy.sh
-#
+# 
 # Menu:
 #   1 - Install configuration 
 #   2 - Recovery backup (if .bak exists)
